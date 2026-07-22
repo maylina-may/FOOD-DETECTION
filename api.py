@@ -20,7 +20,7 @@
     "app = Flask(__name__)\n",
     "CORS(app)\n",
     "\n",
-    "KEY = \"gsk_xxxxxxxxxxxxxxxxxxxxxxx\"  \n",
+    "KEY = \"os.getenv("GROQ_API_KEY")\"  \n",
     "MODEL = \"meta-llama/llama-4-scout-17b-16e-instruct\"\n",
     "\n",
     "model_path = os.path.join(\".\", \"runs\", \"detect\", \"train2\", \"weights\", \"best.pt\")\n",
