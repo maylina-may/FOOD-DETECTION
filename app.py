@@ -83,7 +83,7 @@ with st.sidebar:
     st.header("⚙️ Pengaturan")
     api_base = st.text_input(
         "API Base URL",
-        value="http://localhost:5000",
+        value="https://food-api.onrender.com",
         help="Isi dengan alamat API Flask kamu."
     )
     endpoint_path = st.text_input(
