@@ -4,7 +4,7 @@ import base64
 import io
 from PIL import Image
 import pandas as pd
-from typing import Tuple, List, Dict
+from typing import Tuple, Dict
 
 # -----------------------------
 # Konfigurasi Halaman
@@ -24,103 +24,96 @@ st.set_page_config(
 # Helper Functions
 # -----------------------------
 def parse_data_url(data_url: str) -> Tuple[str, bytes]:
-    """
-    Mem-parse data URL "data:<mime>;base64,<payload>" menjadi (mime, bytes)
-    """
     if not data_url.startswith("data:"):
         raise ValueError("Bukan data URL yang valid")
+
     header, b64data = data_url.split(",", 1)
     mime = header.split(";")[0].split(":", 1)[1]
     raw = base64.b64decode(b64data)
     return mime, raw
 
+
 def post_image(api_url: str, file_name: str, file_bytes: bytes, mime: str, timeout: int = 60) -> Dict:
     files = {
         "image": (file_name, file_bytes, mime or "application/octet-stream")
     }
-    resp = requests.post(api_url, files=files, timeout=timeout)
-    resp.raise_for_status()
-    return resp.json()
 
-def chip(text: str) -> str:
-    """
-    Menghasilkan HTML sederhana untuk chip/tag.
-    """
-    return f"""
-    <span class="chip">{text}</span>
-    """
+    response = requests.post(api_url, files=files, timeout=timeout)
+    response.raise_for_status()
+    return response.json()
+
 
 def inject_style():
     st.markdown(
         """
         <style>
-        .chip {
-            display: inline-block;
-            padding: 6px 12px;
-            margin: 4px 6px 0 0;
-            border-radius: 16px;
-            background: #EEF2FF;
-            color: #3730A3;
-            font-size: 12px;
-            border: 1px solid #E0E7FF;
-            white-space: nowrap;
-        }
-        .metric-card {
-            padding: 14px 16px;
-            border-radius: 12px;
-            border: 1px solid #E5E7EB;
-            background: #FFFFFF;
+        .chip{
+            display:inline-block;
+            padding:6px 12px;
+            margin:4px 6px 0 0;
+            border-radius:16px;
+            background:#EEF2FF;
+            color:#3730A3;
+            font-size:12px;
+            border:1px solid #E0E7FF;
         }
         </style>
         """,
         unsafe_allow_html=True
     )
 
+
+inject_style()
+
 # -----------------------------
 # Sidebar
 # -----------------------------
 with st.sidebar:
+
     st.header("⚙️ Pengaturan")
+
     api_base = st.text_input(
         "API Base URL",
-        value="https://food-api.onrender.com",
-        help="Isi dengan alamat API Flask kamu."
+        value="https://food-api.onrender.com"
     )
+
     endpoint_path = st.text_input(
         "Endpoint Deteksi",
-        value="/detect-gizi",
-        help="Path endpoint pada API Flask."
+        value="/detect-gizi"
     )
+
     conf_filter = st.slider(
-        "Filter Confidence (untuk tampilan list, bukan mempengaruhi bounding box dari server)",
-        min_value=0.0, max_value=1.0, value=0.0, step=0.05
+        "Filter Confidence",
+        0.0,
+        1.0,
+        0.0,
+        0.05
     )
+
     render_markdown_table = st.toggle(
         "Render Tabel Gizi sebagai Markdown",
-        value=True,
-        help="Jika dimatikan, akan ditampilkan sebagai teks apa adanya."
+        value=True
     )
-    st.caption("Pastikan API sudah berjalan. Contoh: app Flask berjalan di http://localhost:5000.")
 
-inject_style()
+    st.caption("Pastikan API sudah berjalan.")
 
 # -----------------------------
 # Header
 # -----------------------------
 st.title("🍽️ Deteksi Gizi Makanan")
+
 st.write(
-    "Unggah foto makanan, sistem akan mendeteksi objek (makanan) dengan YOLO dan meminta LLM untuk "
-    "menyusun tabel kandungan gizi. Hasil deteksi divisualisasikan dengan bounding box."
+    "Unggah gambar makanan, kemudian sistem akan mendeteksi makanan "
+    "menggunakan YOLO dan menghasilkan informasi gizi dari LLM."
 )
 
 # -----------------------------
-# Upload & Action
+# Input
 # -----------------------------
 input_method = st.radio(
-    "Pilih metode input:",
-    options=["📁 Upload Gambar", "📸 Ambil Foto"],
+    "Pilih metode input",
+    ["📁 Upload Gambar", "📸 Ambil Foto"],
     horizontal=True,
-    index=0,
     label_visibility="collapsed"
 )
 
@@ -128,128 +121,182 @@ uploaded = None
 cam_image = None
 
 if input_method == "📁 Upload Gambar":
+
     uploaded = st.file_uploader(
-        "Unggah Gambar (JPG/JPEG/PNG)",
+        "Upload",
         type=["jpg", "jpeg", "png"],
-        accept_multiple_files=False,
         label_visibility="collapsed"
     )
+
 else:
+
     cam_image = st.camera_input(
         "Ambil Foto",
         label_visibility="collapsed"
     )
 
-col_preview, col_action = st.columns([3, 2], vertical_alignment="bottom")
+preview = uploaded or cam_image
 
-with col_preview:
-    preview_img = uploaded or cam_image
-    if preview_img:
-        st.image(preview_img, caption="Pratinjau Gambar", use_container_width=True)
-    st.write("")
-    st.write("")
-    detect_btn = st.button("🔎 Deteksi Gizi", type="primary", use_container_width=True, disabled=not preview_img)
+col1, col2 = st.columns([3, 2], vertical_alignment="bottom")
+
+with col1:
+
+    if preview:
+        st.image(
+            preview,
+            caption="Pratinjau Gambar",
+            width="stretch"
+        )
+
+    detect_btn = st.button(
+        "🔎 Deteksi Gizi",
+        type="primary",
+        width="stretch",
+        disabled=not preview
+    )
 
 # -----------------------------
-# Hasil
+# Proses
 # -----------------------------
-if detect_btn and (uploaded or cam_image):
+if detect_btn:
+
     api_url = api_base.rstrip("/") + "/" + endpoint_path.lstrip("/")
+
     try:
-        with st.spinner("Memproses..."):
+
+        with st.spinner("Memproses gambar..."):
+
             source = uploaded or cam_image
+
             file_bytes = source.read()
+
             mime = source.type or "image/jpeg"
-            file_name = getattr(source, "name", "camera_capture.jpg")
-            result = post_image(api_url, file_name, file_bytes, mime, timeout=90)
 
-        # Validasi respon
+            file_name = getattr(source, "name", "camera.jpg")
+
+            result = post_image(
+                api_url,
+                file_name,
+                file_bytes,
+                mime,
+                timeout=90
+            )
+
         if not isinstance(result, dict):
-            st.error("Format respon API tidak sesuai.")
+            st.error("Format respon API tidak valid.")
+            st.stop()
+
+        if "error" in result:
+            st.error(result["error"])
+            st.stop()
+
+        img_data = result.get("image")
+
+        objects = result.get("objects", [])
+
+        gizi = result.get("gizi") or result.get("response", "")
+
+        # -----------------------------
+        # Gambar hasil
+        # -----------------------------
+        st.subheader("📷 Hasil Deteksi")
+
+        if img_data:
+
+            mime, img_bytes = parse_data_url(img_data)
+
+            image = Image.open(io.BytesIO(img_bytes))
+
+            st.image(
+                image,
+                caption="Bounding Box",
+                width="stretch"
+            )
+
+            st.download_button(
+                "⬇️ Download Hasil",
+                img_bytes,
+                file_name="hasil_deteksi.jpg",
+                mime=mime,
+                width="stretch"
+            )
+
         else:
-            # Deteksi error dari API
-            if "error" in result:
-                st.error(f"API Error: {result['error']}")
+            st.info("Tidak ada gambar hasil.")
+
+        # -----------------------------
+        # Detail Objek
+        # -----------------------------
+        st.subheader("📦 Detail Objek")
+
+        filtered = [
+            o for o in objects
+            if float(o.get("confidence", 0)) >= conf_filter
+        ]
+
+        if filtered:
+
+            rows = []
+
+            for obj in filtered:
+
+                bbox = obj.get("bbox", [])
+
+                area = None
+
+                if len(bbox) == 4:
+                    area = max(0, bbox[2]-bbox[0]) * max(0, bbox[3]-bbox[1])
+
+                rows.append({
+                    "Nama": obj.get("nama"),
+                    "Confidence": round(float(obj.get("confidence", 0)), 4),
+                    "BBox": bbox,
+                    "Luas(px²)": area
+                })
+
+            df = pd.DataFrame(rows)
+
+            st.dataframe(
+                df,
+                width="stretch",
+                hide_index=True
+            )
+
+        else:
+
+            st.info("Tidak ada objek yang memenuhi filter.")
+
+        # -----------------------------
+        # Informasi Gizi
+        # -----------------------------
+        st.subheader("🥗 Informasi Gizi")
+
+        if gizi:
+
+            if render_markdown_table:
+                st.markdown(gizi)
             else:
-                # Gambar beranotasi
-                img_data_url = result.get("image")
-                objects = result.get("objects", [])
-                # Coba baca dari key 'gizi' dulu, fallback ke 'response'
-                gizi_text = result.get("gizi") or result.get("response", "")
+                st.text(gizi)
 
-                # Gambar beranotasi (pakai lebar kolom yang sama dengan pratinjau)
-                col_result, _ = st.columns([3, 2], gap="large")
-                with col_result:
-                    st.subheader("📷 Hasil Deteksi")
-                    if img_data_url:
-                        try:
-                            mime, img_bytes = parse_data_url(img_data_url)
-                            image = Image.open(io.BytesIO(img_bytes))
-                            st.image(image, caption="Gambar dengan Bounding Box", use_container_width=True)
-                            st.download_button(
-                                label="Unduh Gambar Hasil",
-                                data=img_bytes,
-                                file_name="hasil_deteksi.jpg",
-                                mime=mime,
-                                use_container_width=True
-                            )
-                        except Exception as e:
-                            st.warning(f"Gagal menampilkan gambar beranotasi: {e}")
-                    else:
-                        st.info("API tidak mengembalikan gambar beranotasi.")
+        else:
+            st.info("Informasi gizi tidak tersedia.")
 
-                # Detail objek
-                st.subheader("📦 Detail Objek Terdeteksi")
-                # Filter berdasarkan threshold untuk tampilan
-                filtered = [o for o in objects if float(o.get("confidence", 0.0)) >= conf_filter]
-                if filtered:
-                    # Bentuk tabel data
-                    def bbox_area(b):
-                        try:
-                            x1, y1, x2, y2 = b
-                            return max(0, x2 - x1) * max(0, y2 - y1)
-                        except Exception:
-                            return None
+        st.toast("Selesai memproses", icon="✅")
 
-                    rows = []
-                    for o in filtered:
-                        nama = o.get("nama", "-")
-                        conf = float(o.get("confidence", 0.0))
-                        bbox = o.get("bbox", [None, None, None, None])
-                        rows.append({
-                            "Nama": nama,
-                            "Confidence": round(conf, 4),
-                            "BBox": bbox,
-                            "Luas (px^2)": bbox_area(bbox)
-                        })
-                    df = pd.DataFrame(rows)
-                    st.dataframe(
-                        df,
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                else:
-                    st.info("Tidak ada objek yang memenuhi filter confidence saat ini.")
-
-                # Tabel gizi (Markdown dari LLM)
-                st.subheader("🥗 Kandungan Gizi")
-                if gizi_text:
-                    if render_markdown_table:
-                        st.markdown(gizi_text)
-                    else:
-                        st.text(gizi_text)
-                else:
-                    st.info("API belum mengembalikan teks gizi.")
-        st.toast("Selesai memproses ✅", icon="✅")
     except requests.exceptions.ConnectionError:
-        st.error(f"Gagal terhubung ke API di {api_url}. Pastikan API berjalan dan URL benar.")
+        st.error("Tidak dapat terhubung ke API.")
+
     except requests.exceptions.Timeout:
-        st.error("Permintaan ke API melebihi batas waktu (timeout). Coba lagi.")
-    except requests.HTTPError as he:
+        st.error("Request timeout.")
+
+    except requests.HTTPError as e:
+
         try:
-            err_json = he.response.json()
+            err = e.response.json()
         except Exception:
-            err_json = he.response.text
-        st.error(f"API mengembalikan error {he.response.status_code}: {err_json}")
+            err = e.response.text
+
+        st.error(f"HTTP {e.response.status_code}: {err}")
+
     except Exception as e:
         st.exception(e)
