@@ -7,3 +7,4 @@ pillow
 requests
 streamlit
 ultralytics
+groq
